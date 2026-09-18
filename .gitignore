@@ -8,6 +8,6 @@ __pycache__/
 *.pyc
 */runs/*
 !*/runs/.gitkeep
-slide-notes.md
+slide-notes*.md
 .giantmem/
 .claude/settings.local.json
