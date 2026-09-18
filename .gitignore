@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+.vercel
+.venv
+node_modules/
+__pycache__/
+*.pyc
+*/runs/*
+!*/runs/.gitkeep
+slide-notes.md
+.giantmem/
+.claude/settings.local.json

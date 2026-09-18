@@ -1,0 +1,25 @@
+{
+  "name": "ai-workshop-skeleton-ts",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "loop": "tsx src/loop.ts",
+    "validate": "tsx src/validate.ts",
+    "improve": "tsx src/improve.ts",
+    "test": "node --import tsx --test tests/loop.test.ts",
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@vercel/node": "^13.0.1",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
