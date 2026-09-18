@@ -16,15 +16,12 @@ import uuid
 from pathlib import Path
 
 import anthropic
-from dotenv import load_dotenv
 
 from agent import RUNS_DIR, tools
 
-load_dotenv()
-
 MODEL = os.environ.get("MODEL", "claude-opus-5")
 SYSTEM = (Path(__file__).parent / "system.md").read_text()
-MAX_TURNS = 10
+MAX_TURNS = int(os.environ.get("MAX_TURNS", "10"))
 
 client = anthropic.Anthropic()
 

@@ -14,7 +14,7 @@ import { MODEL, RUNS_DIR, here } from "./env";
 import * as tools from "./tools";
 
 const SYSTEM = fs.readFileSync(path.join(here, "system.md"), "utf8");
-const MAX_TURNS = 10;
+const MAX_TURNS = Number(process.env.MAX_TURNS ?? 10);
 
 export let client = new Anthropic();
 export function setClient(c: Anthropic) {

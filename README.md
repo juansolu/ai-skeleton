@@ -17,7 +17,13 @@ Everything you need is provided. You do not need to sign up for anything. The An
 
 3. Paste the shared `ANTHROPIC_API_KEY` into `.env` at the repo root. It gets revoked tonight, so don't build anything that needs it tomorrow.
 
-4. Run the loop twice.
+4. Check you are ready before you burn a call finding out.
+
+        scripts/check.sh python      # or ts
+
+   It tells you what is missing and prints the next command. Every `FIX` line is a thing to fix now.
+
+5. Run the loop twice.
 
         cd python && source .venv/bin/activate
         python -m agent.loop "What time is it? Remember it under last_run."
@@ -29,7 +35,7 @@ Everything you need is provided. You do not need to sign up for anything. The An
 
    Second run uses `recall`. That is state. Open `runs/<id>.json` and read what happened. That file is the whole story.
 
-If you use Claude Code, open the repo and it already knows the layout (`CLAUDE.md`, `.claude/`). `/add-tool <what it does>` adds a tool. The `reviewer` agent judges your last run.
+If you use Claude Code, open the repo and it already knows the layout (`CLAUDE.md`, `.claude/`). `/start` walks you from here to a running agent on a project you pick. `/add-tool <what it does>` adds a tool. The `reviewer` agent judges your last run.
 
 ## The levels
 
@@ -76,8 +82,8 @@ After a dozen runs, run `improve`. It writes `runs/improvements-<ts>.md` with pr
           vercel.json                   vercel.json
           tests/                        tests/
           runs/                         runs/
-        scripts/deploy.sh, scripts/trigger.sh
-        .claude/            settings, /add-tool skill, reviewer agent
+        scripts/check.sh, scripts/deploy.sh, scripts/trigger.sh
+        .claude/            settings, /start and /add-tool skills, reviewer agent
         .env                shared secrets, never committed
 
 ## Things that will bite
@@ -86,7 +92,7 @@ Rate limits. A hundred of us share one key. If you see 429s, wait a few seconds.
 
 Cost. `MODEL` defaults to `claude-opus-5`. Set `MODEL=claude-sonnet-5` in `.env` for cheaper iteration while you tune prompts, then switch back to compare.
 
-Turn cap. `MAX_TURNS` is 10. A trace ending with `stop_reason: tool_use` hit the cap.
+Turn cap. `MAX_TURNS` is 10, and `MAX_TURNS=25` in `.env` raises it. A trace ending with `stop_reason: tool_use` hit the cap.
 
 Offline tests. `python tests/test_loop.py` and `npm test` run with a fake client and no key. Run them after you touch the loop or tools.
 

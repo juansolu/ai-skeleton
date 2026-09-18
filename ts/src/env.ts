@@ -12,3 +12,12 @@ try {
 export const RUNS_DIR =
   process.env.RUNS_DIR ?? (process.env.VERCEL ? "/tmp/runs" : path.join(here, "..", "runs"));
 export const MODEL = process.env.MODEL ?? "claude-opus-5";
+
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error(
+    "no ANTHROPIC_API_KEY.\n" +
+      "paste the shared key into .env at the repo root, then run this again.\n" +
+      "  scripts/check.sh ts    tells you what else is missing",
+  );
+  process.exit(1);
+}
