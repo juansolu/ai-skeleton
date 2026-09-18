@@ -10,6 +10,7 @@ Layout (per language):
 - `app.py` / `api/*.ts` plus `vercel.json` are 201's trigger layer: webhook and cron. Deploy with `scripts/deploy.sh python|ts`.
 - `improve` is 301. Reads `runs/*.json`, proposes prompt, criteria, and tool edits. Human applies them.
 - `runs/` holds every trace. That is the state layer. Gitignored.
+- `scripts/check.sh python|ts` is the preflight: key, deps, live auth check. Point people there before debugging a setup by hand. `/start` walks a beginner from a fresh clone to a first run.
 
 Rules:
 - Never read, print, or commit `.env`. The key in it is shared with 100 people and gets revoked tonight.
