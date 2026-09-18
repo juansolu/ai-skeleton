@@ -20,6 +20,8 @@ Ask, as a numbered menu, one question:
 3. Conway's Game of Life, where the agent searches for a seed you describe
 4. They already have an idea
 
+If there is no `kits/` directory in this checkout, say so and go straight to option 4.
+
 For 1 to 3, read `kits/<name>/README.md` and follow it. For 4, take their idea and ask the one question that matters: what does this agent have to look up before it can answer? If there is no answer, it is a prompt, not an agent, and a loop will not help. Say so and help them find the lookup.
 
 ## 3. Get one run on the board
