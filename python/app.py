@@ -1,16 +1,17 @@
-"""201: the trigger layer. Vercel runs this.
+"""Trigger layer — browser UI + webhook + cron.
 
-GET  /          browser UI — submit a prompt, see every tool call
-POST /          same page, runs the loop and renders the trace
-POST /feedback  save a good/bad rating for a trace
-POST /run       webhook. body {"task": "..."}, header Authorization: Bearer $WEBHOOK_SECRET
-GET  /cron      Vercel Cron hits this on the schedule in vercel.json
+The browser UI streams loop events in real-time via Server-Sent Events (SSE).
+The client POSTs the task to /stream and reads a chunked text/event-stream
+response; each SSE line is one loop event (start, thinking, tool_call, etc.).
 
-Local: flask --app app run
+Start:  flask --app app run    (or python app.py)
 """
+import json
 import os
+import queue
+import threading
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from agent import loop, validate
 from agent.tools import save_feedback as _save_feedback
@@ -26,7 +27,6 @@ def authorized(secret_name: str) -> bool:
 
 
 def _build_task(raw_task: str, budget: str, scan_limit: int) -> str:
-    """Prepend structured constraints to the task so the agent respects them."""
     lines = []
     if budget != "any":
         lines.append(f"Budget constraint: {budget}.")
@@ -36,32 +36,67 @@ def _build_task(raw_task: str, budget: str, scan_limit: int) -> str:
     return "\n".join(lines)
 
 
+# ── browser UI ────────────────────────────────────────────────────────────────
+
 @app.route("/", methods=["GET", "POST"])
 def index():
-    trace = None
-    task = ""
-    budget = "any"
-    scan_limit = DEFAULT_SCAN_LIMIT
-    if request.method == "POST":
-        task = (request.form.get("task") or "").strip()
-        budget = request.form.get("budget", "any")
-        scan_limit = int(request.form.get("scan_limit", DEFAULT_SCAN_LIMIT))
-        if task:
-            enriched = _build_task(task, budget, scan_limit)
-            trace = loop.run(enriched)
-    return render_template("index.html", trace=trace, task=task, budget=budget, scan_limit=scan_limit, default_scan_limit=DEFAULT_SCAN_LIMIT)
+    return render_template("index.html", default_scan_limit=DEFAULT_SCAN_LIMIT)
 
+
+@app.post("/stream")
+def stream():
+    """Run the agent loop and stream events back as Server-Sent Events."""
+    body = request.get_json(silent=True) or {}
+    task = _build_task(
+        (body.get("task") or "").strip(),
+        body.get("budget", "any"),
+        int(body.get("scan_limit", DEFAULT_SCAN_LIMIT)),
+    )
+    if not task.strip():
+        return jsonify(error="task is required"), 400
+
+    # thread-safe queue between the loop thread and the generator
+    q: queue.Queue = queue.Queue()
+
+    def on_event(event: dict) -> None:
+        q.put(event)
+
+    def run_loop() -> None:
+        try:
+            loop.run(task, on_event=on_event)
+        except Exception as exc:
+            q.put({"type": "error", "message": str(exc)})
+        finally:
+            q.put(None)  # sentinel: generator knows to stop
+
+    threading.Thread(target=run_loop, daemon=True).start()
+
+    def generate():
+        while True:
+            event = q.get()       # blocks until the loop emits something
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── feedback ──────────────────────────────────────────────────────────────────
 
 @app.post("/feedback")
 def feedback():
     body = request.get_json(silent=True) or {}
-    trace_id = body.get("trace_id", "")
-    rating = body.get("rating", "")
-    result = _save_feedback(trace_id, rating)
+    result = _save_feedback(body.get("trace_id", ""), body.get("rating", ""))
     if result.startswith("error:"):
         return jsonify(error=result), 400
     return jsonify(ok=True)
 
+
+# ── JSON API (webhook + cron) ─────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -84,3 +119,7 @@ def cron():
         return jsonify(error="unauthorized"), 401
     task = os.environ.get("CRON_TASK", "Recall what we stored under last_run and summarize it in one line.")
     return jsonify(validate.run_validated(task))
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)

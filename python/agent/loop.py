@@ -26,12 +26,21 @@ MAX_TURNS = int(os.environ.get("MAX_TURNS", "10"))
 client = anthropic.Anthropic()
 
 
-def run(task: str) -> dict:
+def run(task: str, on_event=None) -> dict:
+    def emit(event: dict) -> None:
+        if on_event:
+            on_event(event)
+
     run_id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
     messages = [{"role": "user", "content": task}]
     trace = {"id": run_id, "task": task, "model": MODEL, "steps": [], "usage": {"input": 0, "output": 0}}
 
-    for _ in range(MAX_TURNS):
+    emit({"type": "start", "run_id": run_id, "task": task})
+
+    # ─── THE LOOP ────────────────────────────────────────────────────────────
+    for turn in range(MAX_TURNS):
+        emit({"type": "thinking", "turn": turn + 1})   # ← loop back to model
+
         response = client.messages.create(
             model=MODEL,
             max_tokens=16000,
@@ -44,14 +53,17 @@ def run(task: str) -> dict:
         messages.append({"role": "assistant", "content": response.content})
 
         if response.stop_reason != "tool_use":
-            break
+            break                                       # ← model decided it's done
 
         results = []
         for block in response.content:
             if block.type != "tool_use":
                 continue
+            emit({"type": "tool_call", "turn": turn + 1, "tool": block.name, "input": block.input})
             out = tools.dispatch(block.name, block.input)
-            trace["steps"].append({"tool": block.name, "input": block.input, "output": out[:2000]})
+            truncated = out[:2000]
+            trace["steps"].append({"tool": block.name, "input": block.input, "output": truncated})
+            emit({"type": "tool_result", "turn": turn + 1, "tool": block.name, "output": truncated})
             results.append(
                 {
                     "type": "tool_result",
@@ -60,12 +72,16 @@ def run(task: str) -> dict:
                     "is_error": out.startswith("error:"),
                 }
             )
-        messages.append({"role": "user", "content": results})
+        messages.append({"role": "user", "content": results})  # ← feed results back, repeat
+    # ─────────────────────────────────────────────────────────────────────────
 
     # stop_reason still "tool_use" here means MAX_TURNS was hit
     trace["stop_reason"] = response.stop_reason
     trace["output"] = "".join(b.text for b in response.content if b.type == "text")
     save(trace)
+    emit({"type": "answer", "text": trace["output"], "run_id": run_id,
+          "usage": trace["usage"], "stop_reason": trace["stop_reason"],
+          "step_count": len(trace["steps"])})
     return trace
 
 
