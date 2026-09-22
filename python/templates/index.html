@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Loop</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f4;
+      color: #1c1917;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page { max-width: 800px; margin: 0 auto; }
+
+    h1 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1.5rem; }
+    h1 span { color: #78716c; font-weight: 400; }
+
+    /* ── form ── */
+    form { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 2rem; }
+
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 0.75rem 1rem;
+      font: inherit;
+      font-size: 0.95rem;
+      border: 1px solid #d6d3d1;
+      border-radius: 8px;
+      resize: vertical;
+      background: #fff;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { border-color: #a78bfa; }
+
+    /* ── controls row ── */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .control-group { display: flex; flex-direction: column; gap: 0.3rem; }
+
+    .control-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #78716c;
+    }
+
+    /* pill toggles */
+    .pills { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+
+    .pills input[type="radio"] { display: none; }
+
+    .pills label {
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid #d6d3d1;
+      font-size: 0.8rem;
+      cursor: pointer;
+      background: #fff;
+      color: #57534e;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      white-space: nowrap;
+    }
+
+    .pills input[type="radio"]:checked + label {
+      background: #ede9fe;
+      border-color: #a78bfa;
+      color: #5b21b6;
+      font-weight: 600;
+    }
+
+    /* scan limit select */
+    select {
+      padding: 0.3rem 0.6rem;
+      font: inherit;
+      font-size: 0.82rem;
+      border: 1px solid #d6d3d1;
+      border-radius: 6px;
+      background: #fff;
+      color: #1c1917;
+      outline: none;
+      cursor: pointer;
+    }
+    select:focus { border-color: #a78bfa; }
+
+    button[type="submit"] {
+      align-self: flex-start;
+      padding: 0.55rem 1.25rem;
+      background: #1c1917;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button[type="submit"]:hover { background: #44403c; }
+
+    /* ── section label ── */
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #78716c;
+      margin-bottom: 0.6rem;
+    }
+
+    /* ── tool call timeline ── */
+    .steps { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
+
+    .step {
+      background: #fff;
+      border: 1px solid #e7e5e4;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.1s;
+    }
+    .step-header:hover { background: #fafaf9; }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #f5f5f4;
+      border: 1px solid #e7e5e4;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #78716c;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tool-badge {
+      font-family: ui-monospace, monospace;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #5b21b6;
+      background: #ede9fe;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .step-preview {
+      flex: 1;
+      font-size: 0.8rem;
+      color: #a8a29e;
+      font-family: ui-monospace, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .step-chevron {
+      flex-shrink: 0;
+      font-size: 0.65rem;
+      color: #a8a29e;
+      transition: transform 0.2s;
+    }
+    .step.open .step-chevron { transform: rotate(90deg); }
+
+    .step-body {
+      display: none;
+      border-top: 1px solid #e7e5e4;
+    }
+    .step.open .step-body { display: flex; }
+
+    .panel { flex: 1; min-width: 0; }
+    .panel + .panel { border-left: 1px solid #e7e5e4; }
+
+    .panel-label {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #78716c;
+      background: #fafaf9;
+      border-bottom: 1px solid #e7e5e4;
+    }
+
+    .panel pre {
+      padding: 0.65rem 0.75rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 280px;
+      overflow-y: auto;
+      color: #292524;
+    }
+
+    /* ── final answer ── */
+    .answer {
+      background: #fff;
+      border: 1px solid #d6d3d1;
+      border-left: 4px solid #a78bfa;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+    }
+    .answer-text {
+      font-size: 0.95rem;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+
+    /* ── feedback ── */
+    .feedback-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .feedback-label { font-size: 0.82rem; color: #78716c; }
+
+    .thumb {
+      padding: 0.3rem 0.75rem;
+      border: 1px solid #e7e5e4;
+      border-radius: 6px;
+      background: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+      line-height: 1;
+    }
+    .thumb:hover { background: #fafaf9; border-color: #a78bfa; }
+    .thumb.selected-good  { background: #dcfce7; border-color: #86efac; }
+    .thumb.selected-bad   { background: #fee2e2; border-color: #fca5a5; }
+
+    #feedback-msg { font-size: 0.8rem; color: #78716c; }
+
+    /* ── meta bar ── */
+    .meta {
+      font-size: 0.78rem;
+      color: #a8a29e;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    @media (max-width: 540px) {
+      .step.open .step-body { flex-direction: column; }
+      .panel + .panel { border-left: none; border-top: 1px solid #e7e5e4; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>Agent Loop <span>— merchant recommender</span></h1>
+
+    <form method="post">
+      <textarea name="task" autofocus
+      >{{ task if task else "I love coffee and wellness. I already subscribe to Seed Health probiotics." }}</textarea>
+
+      <div class="controls">
+
+        <div class="control-group">
+          <span class="control-label">Budget / month</span>
+          <div class="pills">
+            {% set budgets = [
+              ("any",          "Any"),
+              ("under $25",    "Under $25"),
+              ("$25–$50",      "$25–$50"),
+              ("$50–$100",     "$50–$100"),
+              ("over $100",    "$100+"),
+            ] %}
+            {% for value, label in budgets %}
+              <input type="radio" name="budget" id="b_{{ loop.index }}" value="{{ value }}"
+                     {{ 'checked' if budget == value else '' }}>
+              <label for="b_{{ loop.index }}">{{ label }}</label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">Merchants to scan</span>
+          <select name="scan_limit">
+            {% for n in [3, 5, default_scan_limit] %}
+              <option value="{{ n }}" {{ 'selected' if scan_limit == n }}>
+                {{ 'All (' + n|string + ')' if n == default_scan_limit else n|string }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+      </div>
+
+      <button type="submit">Run agent</button>
+    </form>
+
+    {% if trace %}
+
+      {% if trace.steps %}
+        <p class="section-label">{{ trace.steps | length }} tool call{{ 's' if trace.steps | length != 1 }}</p>
+        <div class="steps">
+          {% for step in trace.steps %}
+            <div class="step" id="step-{{ loop.index }}">
+              <div class="step-header" onclick="toggle('step-{{ loop.index }}')">
+                <span class="step-num">{{ loop.index }}</span>
+                <span class="tool-badge">{{ step.tool }}</span>
+                <span class="step-preview">
+                  {%- set args = step.input.items() | list -%}
+                  {%- if args -%}
+                    {{ args[0][0] }}: {{ args[0][1] | string | truncate(60, true, '…') }}
+                  {%- else -%}
+                    no args
+                  {%- endif -%}
+                </span>
+                <span class="step-chevron">▶</span>
+              </div>
+              <div class="step-body">
+                <div class="panel">
+                  <div class="panel-label">Input</div>
+                  <pre>{{ step.input | tojson(indent=2) }}</pre>
+                </div>
+                <div class="panel">
+                  <div class="panel-label">Output</div>
+                  <pre>{{ step.output }}</pre>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <p class="section-label">Recommendation</p>
+      <div class="answer">
+        <p class="answer-text">{{ trace.output }}</p>
+      </div>
+
+      <div class="feedback-row">
+        <span class="feedback-label">Was this useful?</span>
+        <button class="thumb" id="thumb-good" onclick="rate('{{ trace.id }}', 'good')">👍</button>
+        <button class="thumb" id="thumb-bad"  onclick="rate('{{ trace.id }}', 'bad')">👎</button>
+        <span id="feedback-msg"></span>
+      </div>
+
+      <div class="meta">
+        <span>{{ trace.stop_reason }}</span>
+        <span>{{ trace.usage.input + trace.usage.output }} tokens ({{ trace.usage.input }} in / {{ trace.usage.output }} out)</span>
+        <span>{{ trace.id }}</span>
+      </div>
+
+    {% endif %}
+  </div>
+
+  <script>
+    function toggle(id) {
+      document.getElementById(id).classList.toggle('open');
+    }
+
+    // auto-open all steps on page load
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('.step').forEach(function (el) {
+        el.classList.add('open');
+      });
+    });
+
+    function rate(traceId, rating) {
+      fetch('/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({trace_id: traceId, rating: rating}),
+      })
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        document.getElementById('thumb-good').classList.toggle('selected-good', rating === 'good');
+        document.getElementById('thumb-bad').classList.toggle('selected-bad',  rating === 'bad');
+        document.getElementById('feedback-msg').textContent = rating === 'good' ? 'Thanks!' : 'Got it, noted.';
+      })
+      .catch(function () {
+        document.getElementById('feedback-msg').textContent = 'Could not save.';
+      });
+    }
+  </script>
+</body>
+</html>

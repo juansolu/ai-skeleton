@@ -3,6 +3,7 @@
 Three edits per tool: the function, an entry in HANDLERS, a schema in SCHEMAS.
 """
 import json
+import os
 import urllib.request
 from datetime import datetime, timezone
 
@@ -226,30 +227,40 @@ def _load() -> dict:
     return json.loads(MEMORY.read_text()) if MEMORY.exists() else {}
 
 
-def list_merchants() -> str:
-    """Return all merchants in the catalog."""
+def list_merchants(limit: int | None = None) -> str:
+    """Return merchants in the catalog, optionally capped to `limit`."""
+    cap = int(os.environ.get("MERCHANT_SCAN_LIMIT", len(_MERCHANTS)))
+    if limit is not None:
+        cap = min(limit, cap)
     summary = [
         {"id": m["id"], "name": m["name"], "category": m["category"], "description": m["description"]}
-        for m in _MERCHANTS
+        for m in _MERCHANTS[:cap]
     ]
     return json.dumps(summary, indent=2)
 
 
-def get_merchant_products(merchant_id: str) -> str:
-    """Return all products for a given merchant id."""
+def get_merchant_products(merchant_id: str, max_price: float | None = None) -> str:
+    """Return products for a merchant, optionally filtered to max_price USD/interval."""
     if merchant_id not in _PRODUCTS:
         ids = [m["id"] for m in _MERCHANTS]
         return f"error: unknown merchant_id '{merchant_id}'. Valid ids: {ids}"
-    return json.dumps(_PRODUCTS[merchant_id], indent=2)
+    products = _PRODUCTS[merchant_id]
+    if max_price is not None:
+        products = [p for p in products if p["price_usd"] <= max_price]
+    return json.dumps(products, indent=2) if products else f"no products under ${max_price} for {merchant_id}"
 
 
-def search_products(query: str) -> str:
-    """Full-text search across all merchant products by query string."""
+def search_products(query: str, min_price: float | None = None, max_price: float | None = None) -> str:
+    """Full-text search across all products. Optionally filter by min_price / max_price (USD)."""
     q = query.lower()
     hits = []
     for merchant_id, products in _PRODUCTS.items():
         merchant = next(m for m in _MERCHANTS if m["id"] == merchant_id)
         for product in products:
+            if min_price is not None and product["price_usd"] < min_price:
+                continue
+            if max_price is not None and product["price_usd"] > max_price:
+                continue
             searchable = " ".join(
                 [
                     product["title"],
@@ -265,6 +276,24 @@ def search_products(query: str) -> str:
     if not hits:
         return f"no products matched '{query}'"
     return json.dumps(hits, indent=2)
+
+
+FEEDBACK_FILE = RUNS_DIR / "feedback.json"
+
+
+def _load_feedback() -> dict:
+    return json.loads(FEEDBACK_FILE.read_text()) if FEEDBACK_FILE.exists() else {}
+
+
+def save_feedback(trace_id: str, rating: str) -> str:
+    """Persist a good/bad rating for a trace. rating must be 'good' or 'bad'."""
+    if rating not in ("good", "bad"):
+        return "error: rating must be 'good' or 'bad'"
+    data = _load_feedback()
+    data[trace_id] = rating
+    FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FEEDBACK_FILE.write_text(json.dumps(data, indent=2))
+    return f"saved {rating} for {trace_id}"
 
 
 HANDLERS = {
@@ -313,27 +342,35 @@ SCHEMAS = [
     },
     {
         "name": "list_merchants",
-        "description": "List all merchants in the Recharge catalog with their id, name, category, and description.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "get_merchant_products",
-        "description": "Return every product offered by a merchant. Call list_merchants first to get a valid merchant_id.",
+        "description": "List merchants in the Recharge catalog. Pass limit to cap how many are returned (respects MERCHANT_SCAN_LIMIT env var).",
         "input_schema": {
             "type": "object",
             "properties": {
-                "merchant_id": {"type": "string", "description": "The merchant id from list_merchants."}
+                "limit": {"type": "integer", "description": "Max number of merchants to return. Omit to use the configured scan limit."}
+            },
+        },
+    },
+    {
+        "name": "get_merchant_products",
+        "description": "Return products offered by a merchant. Pass max_price to filter to affordable options.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "merchant_id": {"type": "string", "description": "The merchant id from list_merchants."},
+                "max_price": {"type": "number", "description": "Only return products at or below this USD price. Omit for no filter."},
             },
             "required": ["merchant_id"],
         },
     },
     {
         "name": "search_products",
-        "description": "Search all products by keyword (e.g. 'coffee', 'protein', 'dog'). Returns matching products with their merchant.",
+        "description": "Search all products by keyword. Optionally filter by min_price and max_price (USD).",
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Keyword or phrase to search for."}
+                "query": {"type": "string", "description": "Keyword or phrase to search for."},
+                "min_price": {"type": "number", "description": "Only include products at or above this USD price."},
+                "max_price": {"type": "number", "description": "Only include products at or below this USD price."},
             },
             "required": ["query"],
         },

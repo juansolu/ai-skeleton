@@ -19,7 +19,7 @@ import anthropic
 
 from agent import RUNS_DIR, tools
 
-MODEL = os.environ.get("MODEL", "claude-opus-5")
+MODEL = os.environ.get("MODEL", "claude-sonnet-5")
 SYSTEM = (Path(__file__).parent / "system.md").read_text()
 MAX_TURNS = int(os.environ.get("MAX_TURNS", "10"))
 
